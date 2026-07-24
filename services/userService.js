@@ -1,34 +1,22 @@
 const db = require("../db");
 
-exports.getLevel1Menus = (id) => {
+exports.getUsers = () => {
   return new Promise((resolve, reject) => {
     const sql = `
-        SELECT DISTINCT
-        m.id,
-        m.menu_title,
-        m.screen_id,
-        m.parent_id,
-        m.level,
-        m.order_hint,
-        m.url_extras
-    FROM erp_menu_item m
-    INNER JOIN erp_user_role_screen urs
-        ON m.screen_id = urs.screen_id
-    WHERE urs.user_role_id = ?
-        AND urs.can_read = 1
-        AND m.level = 1
-        AND m.status = 1
-    ORDER BY m.id
-        `;
+        SELECT u.id as user_id,u.user_role_id,ur.name as role_name,u.user_name,e.emp_number,concat(e.emp_firstname,' ',e.emp_lastname) as fullName 
+        FROM erp_user u 
+        LEFT JOIN hs_hr_employee e ON u.emp_number = e.emp_number 
+        LEFT JOIN erp_user_role ur ON ur.id = u.user_role_id
+        WHERE deleted = 0 AND status = 1 AND e.termination_id IS null`;
 
-    db.query(sql, [id], (err, results) => {
+    db.query(sql, (err, results) => {
       if (err) {
         console.log("DB Error:", err);
-        return reject(new Error("Failed to fetch menus"));
+        return reject(new Error("Failed to fetch users"));
       }
 
       if (results.length === 0) {
-        return reject(new Error("Menu not found"));
+        return reject(new Error("User not found"));
       }
 
       resolve(results);

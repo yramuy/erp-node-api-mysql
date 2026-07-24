@@ -4,6 +4,9 @@ const router = express.Router();
 const employeeController = require("../controllers/employeeController");
 const authController = require("../controllers/authController");
 const menuController = require("../controllers/menuController");
+const usersController = require("../controllers/usersController");
+const fieldController = require("../controllers/fieldController");
+
 const verifyToken = require("../middleware/auth");
 
 router.post("/login", authController.login);
@@ -22,6 +25,10 @@ router.get(
   verifyToken,
   employeeController.getEmployeeByID,
 );
+
+router.get("/users", verifyToken, usersController.getUsers);
+
+router.get("/dynamicScreenFields/:moduleId/:screenId", verifyToken, fieldController.getDynamicScreenFields);
 
 
 module.exports = router;
