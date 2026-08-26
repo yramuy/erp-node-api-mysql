@@ -1,5 +1,102 @@
 const db = require("../db");
 
+exports.insertDynamic = async (selectedScreenID, formData) => {
+  if (
+    !formData ||
+    typeof formData !== "object" ||
+    Array.isArray(formData) ||
+    Object.keys(formData).length === 0
+  ) {
+    throw new Error("Form data is required");
+  }
+
+  // Get table name from erp_screen_tables
+  const tableResult = await queryAsync(
+    `SELECT table_name
+     FROM erp_screen_tables
+     WHERE screen_id = ? AND is_active = 1
+     LIMIT 1`,
+    [selectedScreenID],
+  );
+
+  if (tableResult.length === 0) {
+    throw new Error("Table mapping not found for selected screen");
+  }
+
+  const tableName = tableResult[0].table_name;
+
+  if (!isValidIdentifier(tableName)) {
+    throw new Error("Invalid table name");
+  }
+
+  const columns = Object.keys(formData);
+
+  const invalidColumns = columns.filter((column) => !isValidIdentifier(column));
+
+  if (invalidColumns.length > 0) {
+    throw new Error(`Invalid column names: ${invalidColumns.join(", ")}`);
+  }
+
+  const sql = "INSERT INTO ?? SET ?";
+
+  const result = await queryAsync(sql, [tableName, formData]);
+
+  return {
+    id: result.insertId,
+    table_name: tableName,
+    fields: formData,
+  };
+};
+
+const isValidIdentifier = (value) => {
+  return typeof value === "string" && /^[a-zA-Z0-9_]+$/.test(value);
+};
+
+exports.getViewFields = () => {
+  return new Promise((resolve, reject) => {
+    const sql = `
+      SELECT 
+        df.id,
+        df.module_id,
+        df.screen_id,
+        df.control_id,
+        df.label_name,
+        df.field_name,
+        df.master_entity_id,
+        CASE 
+          WHEN df.is_mandatory = 1 THEN 'Yes'
+          ELSE 'No'
+        END AS is_mandatory,
+        CASE 
+          WHEN df.is_display = 1 THEN 'Yes'
+          ELSE 'No'
+        END AS is_display,
+        df.role_id,
+        df.is_enable,
+        df.order_by,
+        df.is_active,
+        c.name AS control_type,
+        s.name AS screen
+      FROM erp_dynamic_form_fields df
+      LEFT JOIN erp_controls c ON df.control_id = c.id
+      LEFT JOIN erp_screen s ON df.screen_id = s.id
+      WHERE df.is_active = 1`;
+
+    db.query(sql, (err, results) => {
+      if (err) {
+        console.log("DB Error:", err);
+        return reject(new Error("Failed to fetch fields"));
+      }
+
+      if (results.length === 0) {
+        return reject(new Error("No fields found"));
+      }
+
+      resolve(results);
+    });
+  });
+};
+
 const queryAsync = (sql, params = []) => {
   return new Promise((resolve, reject) => {
     db.query(sql, params, (err, results) => {
@@ -12,7 +109,7 @@ const queryAsync = (sql, params = []) => {
   });
 };
 
-exports.getDynamicScreenFields = async (moduleId, screenId) => {
+exports.getScreenFields = async (moduleId, screenId) => {
   try {
     const sql = `
       SELECT 
@@ -43,9 +140,14 @@ exports.getDynamicScreenFields = async (moduleId, screenId) => {
         is_enable: value.is_enable,
         is_active: value.is_active,
         control_type: value.control_type,
-        control_value: value.field_name === "employee_id" ? await exports.getEmployeeLastID() : "",
-        entity_data: value.master_entity_id ? await exports.getEntityMasterData(value.master_entity_id) : [],
-        order_by: value.order_by
+        control_value:
+          value.field_name === "employee_id"
+            ? await exports.getEmployeeLastID()
+            : "",
+        entity_data: value.master_entity_id
+          ? await exports.getEntityMasterData(value.master_entity_id)
+          : [],
+        order_by: value.order_by,
       });
     }
 
@@ -71,7 +173,10 @@ exports.getEntityMasterData = async (id) => {
     }
 
     const entityRow = result[0];
-    const entity = await exports.getEntityDataByTableName(entityRow.master_table, entityRow.id);
+    const entity = await exports.getEntityDataByTableName(
+      entityRow.master_table,
+      entityRow.id,
+    );
 
     return entity;
   } catch (error) {
@@ -81,21 +186,25 @@ exports.getEntityMasterData = async (id) => {
 
 exports.getEntityDataByTableName = async (table, id) => {
   try {
-    let sql = `SELECT * FROM ??`;
-    const params = [table];
+    sql = `SELECT * FROM ??`;
 
-    // if (String(id) === "4") {
-    //   sql += ` WHERE parent_id = ?`;
-    //   params.push(0);
-    // }
+    const params = [table];
 
     const result = await queryAsync(sql, params);
 
-    return result.map((value) => ({
-      id: value.id,
-      name: value.name
-    }));
+    if (String(table) == "erp_menu_item") {
+      return result.map((value) => ({
+        id: value.id,
+        name: value.menu_title,
+      }));
+    } else {
+      return result.map((value) => ({
+        id: value.id,
+        name: value.name,
+      }));
+    }
   } catch (error) {
+    console.error("getEntityDataByTableName:", error);
     throw new Error("Failed to fetch entity data by table name");
   }
 };
@@ -226,4 +335,20 @@ exports.getLevel3Menus = (roleId, parentId) => {
       resolve(results);
     });
   });
+};
+
+exports.getDependanceMaster = async (moduleID) => {
+  const sql = `
+        SELECT *
+        FROM erp_screen
+        WHERE module_id = ?
+        ORDER BY name
+    `;
+
+  const result = await queryAsync(sql, [moduleID]);
+
+  return result.map((item) => ({
+    id: item.id,
+    name: item.name,
+  }));
 };

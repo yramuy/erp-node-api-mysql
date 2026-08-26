@@ -85,7 +85,8 @@ exports.getLevel3Menus = (roleId, parentId) => {
     m.url_extras,
     m.menu_icon,
     s.name,
-    s.action_url
+    s.action_url,
+    s.module_id
 FROM erp_menu_item m
 INNER JOIN erp_user_role_screen urs
     ON m.screen_id = urs.screen_id

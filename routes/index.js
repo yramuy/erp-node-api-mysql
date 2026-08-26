@@ -11,13 +11,13 @@ const verifyToken = require("../middleware/auth");
 
 router.post("/login", authController.login);
 
-router.get(
-  "/menus/:id",
-  verifyToken,
-  menuController.getLevel1Menus,
-);
+router.get("/menus/:id", verifyToken, menuController.getLevel1Menus);
 
-router.get("/subMenus/:roleId/:parentId", verifyToken, menuController.getLevel2Menus);
+router.get(
+  "/subMenus/:roleId/:parentId",
+  verifyToken,
+  menuController.getLevel2Menus,
+);
 
 router.get("/employees", verifyToken, employeeController.getEmployees);
 router.get(
@@ -25,10 +25,24 @@ router.get(
   verifyToken,
   employeeController.getEmployeeByID,
 );
-
 router.get("/users", verifyToken, usersController.getUsers);
+router.get(
+  "/screenFields/:moduleId/:screenId",
+  verifyToken,
+  fieldController.getScreenFields,
+);
+router.get("/viewFields", verifyToken, fieldController.getViewFields);
 
-router.get("/dynamicScreenFields/:moduleId/:screenId", verifyToken, fieldController.getDynamicScreenFields);
+router.post(
+  "/dependance_master",
+  verifyToken,
+  fieldController.getDependanceMaster,
+);
 
+router.post(
+  "/insertDynamic",
+  verifyToken,
+  fieldController.insertDynamic,
+);
 
 module.exports = router;
