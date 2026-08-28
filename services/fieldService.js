@@ -1,6 +1,6 @@
 const db = require("../db");
 
-exports.insertDynamic = async (selectedScreenID, formData) => {
+exports.saveAndUpdate = async (selectedScreenID, formData) => {
   if (
     !formData ||
     typeof formData !== "object" ||
@@ -10,25 +10,27 @@ exports.insertDynamic = async (selectedScreenID, formData) => {
     throw new Error("Form data is required");
   }
 
-  // Get table name from erp_screen_tables
-  const tableResult = await queryAsync(
-    `SELECT table_name
-     FROM erp_screen_tables
-     WHERE screen_id = ? AND is_active = 1
-     LIMIT 1`,
-    [selectedScreenID],
-  );
+  // // Get table name
+  // const tableResult = await queryAsync(
+  //   `SELECT table_name
+  //    FROM erp_screen_tables
+  //    WHERE screen_id = ?
+  //      AND is_active = 1
+  //    LIMIT 1`,
+  //   [selectedScreenID],
+  // );
 
-  if (tableResult.length === 0) {
-    throw new Error("Table mapping not found for selected screen");
-  }
+  // if (tableResult.length === 0) {
+  //   throw new Error("Table mapping not found for selected screen");
+  // }
 
-  const tableName = tableResult[0].table_name;
+  const tableName = await exports.getTableName(selectedScreenID);
 
   if (!isValidIdentifier(tableName)) {
     throw new Error("Invalid table name");
   }
 
+  // Validate column names
   const columns = Object.keys(formData);
 
   const invalidColumns = columns.filter((column) => !isValidIdentifier(column));
@@ -37,6 +39,37 @@ exports.insertDynamic = async (selectedScreenID, formData) => {
     throw new Error(`Invalid column names: ${invalidColumns.join(", ")}`);
   }
 
+  // Get ID
+  const id = formData.id;
+
+  // =====================================================
+  // UPDATE
+  // =====================================================
+  if (id) {
+    // Remove id from SET data
+    const updateData = { ...formData };
+    delete updateData.id;
+
+    if (Object.keys(updateData).length === 0) {
+      throw new Error("No fields available for update");
+    }
+
+    const sql = "UPDATE ?? SET ? WHERE id = ?";
+
+    const result = await queryAsync(sql, [tableName, updateData, id]);
+
+    return {
+      id: id,
+      table_name: tableName,
+      fields: updateData,
+      action: "update",
+      affectedRows: result.affectedRows,
+    };
+  }
+
+  // =====================================================
+  // INSERT
+  // =====================================================
   const sql = "INSERT INTO ?? SET ?";
 
   const result = await queryAsync(sql, [tableName, formData]);
@@ -45,7 +78,174 @@ exports.insertDynamic = async (selectedScreenID, formData) => {
     id: result.insertId,
     table_name: tableName,
     fields: formData,
+    action: "insert",
   };
+};
+
+exports.getListViewData = async (moduleId, screenId) => {
+  const tableName = await exports.getTableName(screenId);
+
+  if (!isValidIdentifier(tableName)) {
+    throw new Error("Invalid table name");
+  }
+
+  const tableFields = await exports.getTableFields(screenId);
+
+  if (!tableFields || tableFields.length === 0) {
+    throw new Error("No fields configured for this screen");
+  }
+
+  // Get configured database columns
+  const columns = tableFields
+    .map((field) => field.tr_name)
+    .filter(Boolean);
+
+  // Validate columns
+  columns.forEach((column) => {
+    if (!isValidIdentifier(column)) {
+      throw new Error(`Invalid column name: ${column}`);
+    }
+  });
+
+  // Main table columns
+  const selectColumns = columns.map((col) => `t.${col}`);
+
+  const joins = [];
+
+  /*
+   * Module Name
+   */
+  if (columns.includes("module_id")) {
+    selectColumns.push("m.name AS module_name");
+
+    joins.push(`
+      LEFT JOIN erp_module m
+        ON t.module_id = m.id
+    `);
+  }
+
+  /*
+   * Screen Name
+   */
+  if (columns.includes("screen_id")) {
+    selectColumns.push("s.name AS screen_name");
+
+    joins.push(`
+      LEFT JOIN erp_screen s
+        ON t.screen_id = s.id
+    `);
+  }
+
+  /*
+   * Parent Menu Name
+   */
+  if (columns.includes("parent_id")) {
+    selectColumns.push("pm.menu_title AS parent_name");
+
+    joins.push(`
+      LEFT JOIN erp_menu_item pm
+        ON t.parent_id = pm.id
+    `);
+  }
+
+  const sql = `
+    SELECT
+      ${selectColumns.join(", ")}
+    FROM ?? t
+    ${joins.join("\n")}
+  `;
+
+  const result = await queryAsync(sql, [tableName]);
+
+  /*
+   * Create dynamic table headers.
+   *
+   * The header is generated from the actual fields
+   * returned by the SQL query.
+   */
+  const tableHeaders = Object.keys(result[0] || {}).map((key) => {
+
+    // Check whether the field exists in configured table fields
+    const configuredField = tableFields.find(
+      (field) => field.tr_name === key
+    );
+
+    // If configured, use configured th_name
+    if (configuredField) {
+      return {
+        th_name: configuredField.th_name,
+      };
+    }
+
+    // Otherwise generate display name automatically
+    const displayName = key
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+
+    return {
+      th_name: displayName,
+    };
+  });
+
+  return {
+    status: true,
+    message: "Data fetched successfully",
+    data: {
+      tableHeaders,
+      tableRowData: result,
+    },
+  };
+};
+
+exports.getTableName = async (selectedScreenID) => {
+  const result = await queryAsync(
+    `SELECT table_name
+     FROM erp_screen_tables
+     WHERE screen_id = ?
+       AND is_active = 1
+     LIMIT 1`,
+    [selectedScreenID],
+  );
+
+  if (!result.length) {
+    throw new Error("Table mapping not found for selected screen");
+  }
+
+  const tableName = result[0].table_name;
+
+  if (!isValidIdentifier(tableName)) {
+    throw new Error("Invalid table name");
+  }
+
+  return tableName;
+};
+
+exports.getTableFields = async (screenId) => {
+  const sql = `
+    SELECT
+      id,
+      th_name,
+      tr_name,
+      order_by
+    FROM erp_dynamic_list_view_fields
+    WHERE screen_id = ?
+      AND is_active = 1
+    ORDER BY order_by ASC
+  `;
+
+  const result = await queryAsync(sql, [screenId]);
+
+  if (!result.length) {
+    throw new Error("No list view fields found for the selected screen");
+  }
+
+  result.forEach((field) => {
+    if (!isValidIdentifier(field.tr_name)) {
+      throw new Error(`Invalid column name: ${field.tr_name}`);
+    }
+  });
+
+  return result;
 };
 
 const isValidIdentifier = (value) => {
@@ -63,6 +263,8 @@ exports.getViewFields = () => {
         df.label_name,
         df.field_name,
         df.master_entity_id,
+        df.dynamic_form_module_id,
+        df.dynamic_form_screen_id,
         CASE 
           WHEN df.is_mandatory = 1 THEN 'Yes'
           ELSE 'No'

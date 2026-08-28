@@ -1,6 +1,6 @@
 const fieldService = require("../services/fieldService");
 
-exports.insertDynamic = async (req, res) => {
+exports.saveAndUpdate = async (req, res) => {
   try {
     const payload = req.body;
 
@@ -16,7 +16,7 @@ exports.insertDynamic = async (req, res) => {
       });
     }
 
-    const { selectedScreenID, ...dataPayload } = payload;
+    const { selectedScreenID, selectedModuleID, ...dataPayload } = payload;
 
     if (!selectedScreenID) {
       return res.status(400).json({
@@ -30,6 +30,14 @@ exports.insertDynamic = async (req, res) => {
       delete dataPayload.module_id;
     }
 
+    // Screen 881
+    if (Number(selectedScreenID) === 881) {
+      dataPayload.dynamic_form_screen_id = selectedScreenID;
+      dataPayload.dynamic_form_module_id = selectedModuleID;
+      delete dataPayload.control_type;
+      delete dataPayload.screen;
+    }
+
     if (Object.keys(dataPayload).length === 0) {
       return res.status(400).json({
         status: false,
@@ -37,19 +45,42 @@ exports.insertDynamic = async (req, res) => {
       });
     }
 
-    const data = await fieldService.insertDynamic(
+    const data = await fieldService.saveAndUpdate(
       selectedScreenID,
-      dataPayload
+      dataPayload,
     );
 
-    return res.status(201).json({
+    return res.status(200).json({
       status: true,
-      message: "Data saved successfully",
+      message:
+        data.action === "update"
+          ? "Data updated successfully"
+          : "Data saved successfully",
       data,
     });
   } catch (error) {
-    console.error("saveData error:", error);
+    console.error("saveAndUpdate error:", error);
 
+    return res.status(500).json({
+      status: false,
+      message: error.message,
+    });
+  }
+};
+
+exports.listViewData = async (req, res) => {
+  try {
+    const moduleId = req.params.moduleId;
+    const screenId = req.params.screenId;
+
+    const response = await fieldService.getListViewData(
+      moduleId,
+      screenId
+    );
+
+    return res.json(response);
+
+  } catch (error) {
     return res.status(500).json({
       status: false,
       message: error.message,

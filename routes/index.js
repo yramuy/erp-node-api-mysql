@@ -40,9 +40,15 @@ router.post(
 );
 
 router.post(
-  "/insertDynamic",
+  "/saveAndUpdate",
   verifyToken,
-  fieldController.insertDynamic,
+  fieldController.saveAndUpdate,
+);
+
+router.get(
+  "/listViewData/:moduleId/:screenId",
+  verifyToken,
+  fieldController.listViewData,
 );
 
 module.exports = router;
