@@ -24,10 +24,24 @@ exports.saveAndUpdate = async (req, res) => {
         message: "Screen ID is required",
       });
     }
+    
+    delete dataPayload.list_screen_id;
+    delete dataPayload.screen_title;
+    delete dataPayload.module_name;
+    delete dataPayload.screen_name;
 
     // Remove unwanted fields
     if (Number(selectedScreenID) === 717 || Number(selectedScreenID) === 722) {
       delete dataPayload.module_id;
+      delete dataPayload.screen_name;
+      delete dataPayload.role_name;
+      delete dataPayload.parent_name;
+    }
+
+    // Remove unwanted fields
+    if (Number(selectedScreenID) === 714) {
+      delete dataPayload.module_name;
+      delete dataPayload.screen_id;
     }
 
     // Screen 881
@@ -73,13 +87,9 @@ exports.listViewData = async (req, res) => {
     const moduleId = req.params.moduleId;
     const screenId = req.params.screenId;
 
-    const response = await fieldService.getListViewData(
-      moduleId,
-      screenId
-    );
+    const response = await fieldService.getListViewData(moduleId, screenId);
 
     return res.json(response);
-
   } catch (error) {
     return res.status(500).json({
       status: false,

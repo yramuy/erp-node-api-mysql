@@ -96,9 +96,7 @@ exports.getListViewData = async (moduleId, screenId) => {
   }
 
   // Get configured database columns
-  const columns = tableFields
-    .map((field) => field.tr_name)
-    .filter(Boolean);
+  const columns = tableFields.map((field) => field.tr_name).filter(Boolean);
 
   // Validate columns
   columns.forEach((column) => {
@@ -107,8 +105,27 @@ exports.getListViewData = async (moduleId, screenId) => {
     }
   });
 
-  // Main table columns
-  const selectColumns = columns.map((col) => `t.${col}`);
+  // Define which columns are boolean (0/1) and should be converted to Yes/No
+  const booleanColumns = [
+    "is_active",
+    "is_deleted",
+    "is_enabled",
+    "status",
+    "can_read",
+    "can_create",
+    "can_update",
+    "can_delete",
+    // add your actual 0/1 column names here
+  ];
+
+  // Main table columns with CASE for boolean columns
+  const selectColumns = columns.map((col) => {
+    if (booleanColumns.includes(col)) {
+      // Convert 0 -> No, 1 -> Yes
+      return `CASE WHEN t.${col} = 1 THEN 'Yes' WHEN t.${col} = 0 THEN 'No' ELSE NULL END AS ${col}`;
+    }
+    return `t.${col}`;
+  });
 
   const joins = [];
 
@@ -133,6 +150,30 @@ exports.getListViewData = async (moduleId, screenId) => {
     joins.push(`
       LEFT JOIN erp_screen s
         ON t.screen_id = s.id
+    `);
+  }
+
+  /*
+   * Role Name
+   */
+  if (columns.includes("user_role_id")) {
+    selectColumns.push("r.name AS role_name");
+
+    joins.push(`
+      LEFT JOIN erp_user_role r
+        ON t.user_role_id = r.id
+    `);
+  }
+
+  /*
+   * Screen Name
+   */
+  if (columns.includes("screen_id")) {
+    selectColumns.push("rs.name AS screen_name");
+
+    joins.push(`
+      LEFT JOIN erp_screen rs
+        ON t.screen_id = rs.id
     `);
   }
 
@@ -164,11 +205,8 @@ exports.getListViewData = async (moduleId, screenId) => {
    * returned by the SQL query.
    */
   const tableHeaders = Object.keys(result[0] || {}).map((key) => {
-
     // Check whether the field exists in configured table fields
-    const configuredField = tableFields.find(
-      (field) => field.tr_name === key
-    );
+    const configuredField = tableFields.find((field) => field.tr_name === key);
 
     // If configured, use configured th_name
     if (configuredField) {
@@ -190,6 +228,11 @@ exports.getListViewData = async (moduleId, screenId) => {
   return {
     status: true,
     message: "Data fetched successfully",
+    module_id: tableFields[0].module_id,
+    create_screen_id: tableFields[0].create_screen_id,
+    action_url: tableFields[0].action_url,
+    screen_title: tableFields[0].screen_title,
+
     data: {
       tableHeaders,
       tableRowData: result,
@@ -223,14 +266,20 @@ exports.getTableName = async (selectedScreenID) => {
 exports.getTableFields = async (screenId) => {
   const sql = `
     SELECT
-      id,
-      th_name,
-      tr_name,
-      order_by
-    FROM erp_dynamic_list_view_fields
-    WHERE screen_id = ?
-      AND is_active = 1
-    ORDER BY order_by ASC
+      lv.id,
+      lv.th_name,
+      lv.tr_name,
+      lv.order_by,
+      lv.module_id,
+      lv.create_screen_id,
+      s.action_url,
+      s.name as screen_title
+    FROM erp_dynamic_list_view_fields lv
+    LEFT JOIN erp_screen s
+      ON s.id = lv.create_screen_id
+    WHERE lv.screen_id = ?
+      AND lv.is_active = 1
+    ORDER BY lv.order_by ASC
   `;
 
   const result = await queryAsync(sql, [screenId]);
@@ -316,9 +365,12 @@ exports.getScreenFields = async (moduleId, screenId) => {
     const sql = `
       SELECT 
         df.*,
-        c.name AS control_type
+        c.name AS control_type,
+        s.action_url,
+        s.name as screen_title
       FROM erp_dynamic_form_fields df
       LEFT JOIN erp_controls c ON df.control_id = c.id
+      LEFT JOIN erp_screen s ON df.list_screen_id = s.id
       WHERE df.module_id = ?
         AND df.screen_id = ?
         AND df.is_active = 1
@@ -332,6 +384,10 @@ exports.getScreenFields = async (moduleId, screenId) => {
       output.push({
         id: value.id,
         module_id: value.module_id,
+        screen_id: value.screen_id,
+        list_screen_id: value.list_screen_id,
+        action_url: value.action_url,
+        screen_title: value.screen_title,
         control_id: value.control_id,
         label_name: value.label_name,
         field_name: value.field_name,
