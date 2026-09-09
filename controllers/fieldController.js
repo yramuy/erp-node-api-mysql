@@ -25,7 +25,7 @@ exports.saveAndUpdate = async (req, res) => {
       });
     }
     
-    delete dataPayload.list_screen_id;
+    // delete dataPayload.list_screen_id;
     delete dataPayload.screen_title;
     delete dataPayload.module_name;
     delete dataPayload.screen_name;

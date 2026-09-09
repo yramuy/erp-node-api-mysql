@@ -130,6 +130,18 @@ exports.getListViewData = async (moduleId, screenId) => {
   const joins = [];
 
   /*
+   * Project Name
+   */
+  if (columns.includes("project_id")) {
+    selectColumns.push("p.name AS project_name");
+
+    joins.push(`
+      LEFT JOIN erp_project p
+        ON t.project_id = p.project_id
+    `);
+  }
+
+  /*
    * Module Name
    */
   if (columns.includes("module_id")) {
@@ -444,16 +456,38 @@ exports.getEntityMasterData = async (id) => {
 
 exports.getEntityDataByTableName = async (table, id) => {
   try {
-    sql = `SELECT * FROM ??`;
+    let sql;
+    let params;
 
-    const params = [table];
+    if (String(table) === "hs_hr_employee") {
+      sql = `
+        SELECT *
+        FROM ??
+        WHERE termination_id IS NULL
+      `;
+
+      params = [table];
+    } else {
+      sql = `SELECT * FROM ??`;
+      params = [table];
+    }
 
     const result = await queryAsync(sql, params);
 
-    if (String(table) == "erp_menu_item") {
+    if (String(table) === "erp_menu_item") {
       return result.map((value) => ({
         id: value.id,
         name: value.menu_title,
+      }));
+    }else if (String(table) === "erp_project") {
+      return result.map((value) => ({
+        id: value.project_id,
+        name: value.name,
+      }));
+    } else if (String(table) === "hs_hr_employee") {
+      return result.map((value) => ({
+        id: value.emp_number,
+        name: `${value.emp_firstname || ""} ${value.emp_lastname || ""}`.trim(),
       }));
     } else {
       return result.map((value) => ({
